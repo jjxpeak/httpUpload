@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>断点续传</title>
+</head>
+<script type="application/javascript" src="js/jquery.js"></script>
+<style type="text/css">
+    body {
+        font-family: Arial;
+    }
+
+    form {
+        margin: 50px auto;
+        width: 600px;
+    }
+
+    input[type="button"] {
+        cursor: pointer;
+    }
+
+    table {
+        display: block;
+        margin-top: 15px;
+        border: 1px solid #ddd;
+        border-collapse: collapse;
+    }
+
+    table th {
+        color: #666;
+    }
+
+    table td, table th {
+        padding: 5px;
+        border: 1px solid #ddd;
+        text-align: center;
+        font-size: 14px;
+    }
+</style>
+<body>
+<form action="action/file.php" method="post" id="myForm" enctype="multipart/form-data">
+    <input type="file" id="myFile" multiple="" accept="image/png,image/gif,image/jpg">
+    <table id="upload-list">
+        <thead>
+        <tr>
+            <th width="35%">文件名</th>
+            <th width="15%">文件类型</th>
+            <th width="15%">文件大小</th>
+            <th width="20%">上传进度</th>
+            <th width="15%">
+                <input type="button" id="upload-all-btn" value="全部上传">
+            </th>
+        </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</form>
+</body>
+<script type="application/javascript">
+    var fileSize, fileName, fileType, fileObj, progress, uploadVal, titleLength, uploadItem = [], uploadItemTpl, eachSize = 1024,files = new Array(),fileKey='',
+    uploadItemTpl = '<tr><td>fileName</td><td>fileType</td><td>fileSize</td><td class="progress">{progress}</td><td><input date-name = "fileName" date-type = "fileType" date-state = "{state}" date-size = "Fsize" type="button" date-key="fileKey" date-fprogress = "{progress}" class ="upload-item-btn" value="uploadVal" disabled /></td></tr>',state;
+    window.localStorage.clear();
+    $('#myFile').change(function () {
+        fileObj = $('#myFile')[0].files[0];
+        fileSize = getFileSize(fileObj.size);
+        fileName = fileObj.name;
+        fileType = fileObj.type;
+        uploadVal = '点击上传';
+        progress = '未上传';
+        size = fileObj.size;
+        state = '';
+        var fileKeys  ='';
+        var disabled = ''
+        fileKeys = fileName.split('.');
+        for(var i=0 ; i<fileKeys.length-1;i++) {
+            fileKey += fileKeys[i];
+        }
+        files[fileKey]= fileObj;
+        //判断是否已经上传
+        var item = window.localStorage.getItem(fileKey);
+        if(item){
+            var progressNum = window.localStorage.getItem(fileKey+'_p');
+            progress = '已上传'+progressNum;
+            if( progressNum === 100){
+                disabled = 'disabled = "disabled"';
+            }else if(progressNum < 100){
+                uploadVal = '继续。。';
+                state = 'stop';
+            }
+        }
+
+        //显示上传文件
+        uploadItem.push(uploadItemTpl.replace(/fileName/g, fileName).replace(/fileType/g, fileType).replace(/fileKey/g, fileKey).replace(/fileSize/g, fileSize).replace(/{progress}/g, progress).replace(/uploadVal/g, uploadVal).replace(/Fsize/g,size).replace(/{state}/g,state).replace(/disabled/g,disabled));
+        $('#upload-list').children('tbody').html(uploadItem.join(''))
+                .end();
+        //上传文件
+//        title = $('#upload-list').children('thead').children('tr').children('th');
+//
+//        for(var i = 0 ;i < title.length;i++){
+//            htmlJson.=
+//        }
+//        console.log($('#upload-list').children('thead').children('tr').children('th'));
+    });
+    //上传文件
+    $(document).on('click', '.upload-item-btn', function () {
+        $(this).attr('date-state','in');
+        var     $this = $(this),
+                state = $this.attr('date-state'),
+                msg = {
+                    done: '上传成功',
+                    error: '上传失败',
+                    in: '上传中...',
+                    stop: '暂停中...'
+                },
+                eachSize = 1024,
+                totalSize = $this.attr('date-size'),
+                chunks = Math.ceil(totalSize/eachSize),
+                fileName = $this.attr('date-name'),
+                fileKey = $this.attr('date-key'),
+                percent,
+                chunk,
+                isStop = 0,
+                $progress = $('.progress');
+        if(state === 'in'){
+            $this.val(msg['in']);
+        }else if(state === 'error'){
+            $this.val(msg['error']);
+        }else if(state === 'stop'){
+            $this.val(msg['stop']);
+        }else if(state === 'done'){
+            $this.val(msg['done']);
+        }
+        console.log(window.localStorage.getItem(fileKey+'_chunk'));
+        if(!window.localStorage.getItem(fileKey+'_chunk')){
+            startUpload('first');
+        }
+        function startUpload(times){
+            chunk = window.localStorage.getItem(fileKey+'_chunk') || 0;
+            chunk = parseInt(chunk,10);
+            var isLastChunk = (chunk == (chunks-1))?1:0;
+            if(times === 'first' && isLastChunk === 1){
+                window.localStorage.setItem(fileKey+'_chunk',0);
+                chunk = 0;
+                isLastChunk = 0;
+            }
+            var blobFrom = chunk * eachSize,//开始分片
+                blobTo = (chunk + 1) * eachSize > totalSize ? totalSize : (chunk +1)*eachSize,//分片结尾
+                percent = (100* blobTo/totalSize).toFixed(1),//上传百分比
+                timeout = 5000,
+                fd = new FormData();
+                fd.append('theFile',files[fileKey].slice(blobFrom,blobTo));
+                fd.append('fileName',fileName);
+                fd.append('isLastChunk',isLastChunk);
+                fd.append('isFirstUpload',times ==='first'?1:0);
+                fd.append('fileSize',files[fileKey].size);
+            // 上传
+            $.ajax({
+                type: 'post',
+                url: '/action/file.php',
+                data: fd,
+                processData: false,
+                contentType: false,
+                timeout: timeout,
+                dateType:"json",
+                cache:false,
+                success: function (rs) {
+                    rs = JSON.parse(rs);
+                    // 上传成功
+                    if (rs.status === 100) {
+                        // 记录已经上传的百分比
+                        window.localStorage.setItem(fileKey + '_p', percent);
+                        window.localStorage.setItem(fileKey + '_chunk', ++chunk);
+                        $progress.text(msg['in'] + percent + '%');
+                        // 这样设置可以暂停，但点击后动态的设置就暂停不了..
+                        // if (chunk == 10) {
+                        //     isPaused = 1;
+                        // }
+//                            if(isPaused){
+                        startUpload();
+                        // 已经上传完毕
+                    }else if (rs.status === 200){
+                        if (chunk === (chunks - 1)) {
+                            $progress.text(msg['done']);
+                            $this.val('已经上传').prop('disabled', true).css('cursor', 'not-allowed');
+                            if (!$('#upload-list').find('.upload-item-btn:not(:disabled)').length) {
+                                $('#upload-all-btn').val('已经上传').prop('disabled', true).css('cursor',
+                                        'not-allowed');
+                            }
+                        }
+                    }
+                    // 上传失败，上传失败分很多种情况，具体按实际来设置
+                    else if (rs.status !== 200) {
+                        $progress.text(rs.msg);
+                    }
+                },
+                error: function () {
+                    $progress.text(msg['failed']);
+                }
+            });
+
+        }
+        //文件分片
+//        console.log(totalSize,eachSize,chunks);
+    })
+    function getFileSize(f) {
+        return (f > 1024) ? (f / 1024 > 1024) ? (f / (1024 * 1024) > 1024) ? Number(f / (1024 * 1024 * 1024)).toFixed(1) + 'GB' : Number(f / (1024 * 1024)).toFixed(2) + 'MB' : Number(f / 1024).toFixed(2) + 'KB' : Number(f).toFixed(2) + 'B';
+    }
+</script>
+</html>
